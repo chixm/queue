@@ -68,9 +68,10 @@ func (w *taskWorker) Start() error {
 			if !ok {
 				return w.errGroup.Wait() // No more tasks to process
 			}
-			w.active.Add(1)
+
 			log.Println(`current active workers:`, w.active.Load())
 			w.errGroup.Go(func() error {
+				w.active.Add(1)
 				defer w.active.Add(-1) // Decrement the active worker count when done
 				// Execute the task
 				if err := task.Execute(w.ctx); err != nil {

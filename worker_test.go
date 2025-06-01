@@ -21,6 +21,12 @@ func TestWorker(t *testing.T) {
 		{waitTime: 300},
 		{waitTime: 100},
 		{waitTime: 100},
+		{waitTime: 100},
+		{waitTime: 200},
+		{waitTime: 300},
+		{waitTime: 200},
+		{waitTime: 100},
+		{waitTime: 100},
 	}
 	taskInterfaces := make([]queue.Task, len(tasks))
 	for i, t := range tasks {
