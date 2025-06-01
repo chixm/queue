@@ -15,7 +15,7 @@ import (
 func TestWorker(t *testing.T) {
 	ctx := context.Background()
 	maxWorkers := 5
-	worker := queue.NewWorker[*MockTask](ctx, maxWorkers)
+	worker := queue.NewWorker(ctx, maxWorkers)
 
 	tasks := []*MockTask{
 		{waitTime: 300},

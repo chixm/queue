@@ -8,9 +8,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// worker is goroutine that processes tasks from the queue.
+// taskWorker is goroutine that processes tasks from the queue.
 
-type worker[T Task] struct {
+type taskWorker struct {
 	ctx           context.Context
 	CancelAllFunc context.CancelFunc
 	errGroup      *errgroup.Group
@@ -21,7 +21,7 @@ type worker[T Task] struct {
 	logger        Logger
 }
 
-func NewWorker[T Task](ctx context.Context, maxWorkers int) *worker[Task] {
+func NewWorker(ctx context.Context, maxWorkers int) *taskWorker {
 	ctx, cancel := context.WithCancel(ctx)
 
 	if maxWorkers <= 0 {
@@ -32,7 +32,7 @@ func NewWorker[T Task](ctx context.Context, maxWorkers int) *worker[Task] {
 
 	eg.SetLimit(maxWorkers)
 
-	return &worker[Task]{
+	return &taskWorker{
 		ctx:           ctx,
 		maxWorkers:    maxWorkers,
 		queue:         NewQueue[Task](),
@@ -43,7 +43,7 @@ func NewWorker[T Task](ctx context.Context, maxWorkers int) *worker[Task] {
 	}
 }
 
-func (w *worker[Task]) SetTasks(task []Task) {
+func (w *taskWorker) SetTasks(task []Task) {
 	// Add a single task to the queue
 	if task == nil {
 		return // No task to add
@@ -53,7 +53,11 @@ func (w *worker[Task]) SetTasks(task []Task) {
 	}
 }
 
-func (w *worker[Task]) Start() error {
+func (w *taskWorker) AddTask(task Task) {
+	w.queue.Enqueue(task)
+}
+
+func (w *taskWorker) Start() error {
 	// pull out queue item and execute task
 	for {
 		select {
@@ -88,19 +92,19 @@ func (w *worker[Task]) Start() error {
 	}
 }
 
-func (w *worker[Task]) Stop() {
+func (w *taskWorker) Stop() {
 	// Stop the worker by canceling the context
 	w.CancelAllFunc()
 	// Wait for all tasks to complete
 	w.errGroup.Wait()
 }
 
-func (w *worker[Task]) CurrentActiveWorkers() int32 {
+func (w *taskWorker) CurrentActiveWorkers() int32 {
 	// Return the number of currently active workers
 	return w.active.Load()
 }
 
-func (w *worker[Task]) FailedTasks() []Task {
+func (w *taskWorker) FailedTasks() []Task {
 	// Return the slice of failed tasks
 	ptr := w.failedTasks.Load()
 	if ptr == nil {
@@ -113,7 +117,7 @@ func (w *worker[Task]) FailedTasks() []Task {
 	return slice
 }
 
-func (w *worker[Task]) Log(v ...any) {
+func (w *taskWorker) Log(v ...any) {
 	// Log a message using the provided logger
 	if w.logger != nil {
 		w.logger.Println(v...)
