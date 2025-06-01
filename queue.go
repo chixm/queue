@@ -32,3 +32,9 @@ func (q *queue[T]) Dequeue() (T, bool) {
 	q.items = q.items[1:]
 	return item, true
 }
+
+func (q *queue[T]) AppedToTop(item T) {
+	q.mux.Lock()
+	defer q.mux.Unlock()
+	q.items = append([]T{item}, q.items...)
+}

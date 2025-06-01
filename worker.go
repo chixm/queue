@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"log"
 	"sync/atomic"
 
 	"golang.org/x/sync/errgroup"
@@ -42,21 +43,31 @@ func NewWorker[T Task](ctx context.Context, maxWorkers int) *worker[Task] {
 	}
 }
 
-func (w *worker[Task]) Start() {
+func (w *worker[Task]) SetTasks(task []Task) {
+	// Add a single task to the queue
+	if task == nil {
+		return // No task to add
+	}
+	for _, t := range task {
+		w.queue.Enqueue(t)
+	}
+}
+
+func (w *worker[Task]) Start() error {
 	// pull out queue item and execute task
 	for {
 		select {
 		case <-w.ctx.Done():
-			return // Exit if the context is canceled
+			return w.ctx.Err() // Exit if the context is canceled
 		default:
 			task, ok := w.queue.Dequeue() // Run All tasks in the queue
 			if !ok {
-				return // No more tasks to process
+				return w.errGroup.Wait() // No more tasks to process
 			}
+			w.active.Add(1)
+			log.Println(`current active workers:`, w.active.Load())
 			w.errGroup.Go(func() error {
-				// Increment the active worker count
-				w.active.Add(1)
-				defer w.active.Add(-1) // Decrement when done
+				defer w.active.Add(-1) // Decrement the active worker count when done
 				// Execute the task
 				if err := task.Execute(w.ctx); err != nil {
 					// if task cancelled it's not a failure
@@ -73,9 +84,6 @@ func (w *worker[Task]) Start() {
 				}
 				return nil
 			})
-			if err := w.errGroup.Wait(); err != nil {
-				return
-			}
 		}
 	}
 }
