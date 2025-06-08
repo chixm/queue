@@ -2,6 +2,7 @@ package queue_test
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strconv"
 	"sync/atomic"
@@ -89,6 +90,32 @@ func TestCancelTaskFromWokder(t *testing.T) {
 
 }
 
+func TestWorkerWithFailingTask(t *testing.T) {
+	ctx := context.Background()
+	maxWorkers := 5
+	worker := queue.NewWorker(ctx, maxWorkers)
+	failingTask := &MockFailingTask{waitTime: 100}
+	taskInterfaces := make([]queue.Task, len(tasks)+1)
+	for i, t := range tasks {
+		taskInterfaces[i] = t
+	}
+	taskInterfaces[len(tasks)] = failingTask
+
+	worker.SetTasks(taskInterfaces)
+
+	err := worker.Start()
+
+	failedTasks := worker.FailedTasks()
+
+	if err != nil {
+		log.Printf("Worker finished with error: %v\n", err)
+	}
+
+	// worker does not regard the failed task as an error, it just keeps it in the failedTasks slice for retry.
+	assert.Nil(t, err, "Failed tasks should not be nil")
+	assert.Equal(t, len(failedTasks), 1)
+}
+
 type MockTask struct {
 	waitTime int
 }
@@ -108,5 +135,26 @@ func (m *MockTask) Execute(ctx context.Context) error {
 	case <-time.After(time.Duration(m.waitTime) * time.Millisecond):
 		log.Printf("Task %s completed after %d ms \n", m.ID(), m.waitTime)
 		return nil
+	}
+}
+
+// task that always fails
+type MockFailingTask struct {
+	waitTime int
+}
+
+func (m *MockFailingTask) ID() string {
+	v := atomicCounter.Add(1)
+	return strconv.Itoa(int(v)) + `F`
+}
+
+func (m *MockFailingTask) Execute(ctx context.Context) error {
+	// Simulate some work
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(time.Duration(m.waitTime) * time.Millisecond):
+		log.Printf("Task %s failed after %d ms \n", m.ID(), m.waitTime)
+		return errors.New(`failed while execute task ` + m.ID()) // Simulate a failure
 	}
 }

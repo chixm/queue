@@ -32,14 +32,17 @@ func NewWorker(ctx context.Context, maxWorkers int) *taskWorker {
 
 	eg.SetLimit(maxWorkers)
 
+	atomicPointer := &atomic.Pointer[[]Task]{}
+	atomicPointer.Store(&[]Task{}) // Initialize the failedTasks slice
+
 	return &taskWorker{
 		ctx:           ctx,
 		maxWorkers:    maxWorkers,
-		queue:         NewQueue[Task](),
+		queue:         newQueue[Task](),
 		CancelAllFunc: cancel,
 		errGroup:      eg,
 		activeTaskCnt: atomic.Int32{},
-		failedTasks:   atomic.Pointer[[]Task]{},
+		failedTasks:   *atomicPointer,
 	}
 }
 
@@ -80,8 +83,8 @@ func (w *taskWorker) Start() error {
 						return w.ctx.Err()
 					}
 					// If the task fails, store it in the failedTasks slice
-					ft := *w.failedTasks.Load() // Append the failed task
-					ft = append(ft, task)
+					ftPtr := w.failedTasks.Load() // Append the failed task
+					ft := append(*ftPtr, task)
 					w.failedTasks.Store(&ft)
 					// Log the error if a logger is provided
 					w.Log("Task failed:", err)

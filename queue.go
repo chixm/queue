@@ -2,7 +2,7 @@ package queue
 
 import "sync"
 
-func NewQueue[T any]() *queue[T] {
+func newQueue[T any]() *queue[T] {
 	return &queue[T]{
 		items: make([]T, 0),
 		mux:   sync.Mutex{},
