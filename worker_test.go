@@ -116,6 +116,30 @@ func TestWorkerWithFailingTask(t *testing.T) {
 	assert.Equal(t, len(failedTasks), 1)
 }
 
+func TestAppendTaskWhileWorkerIsRunning(t *testing.T) {
+	ctx := context.Background()
+	maxWorkers := 3
+	worker := queue.NewWorker(ctx, maxWorkers)
+
+	taskInterfaces := make([]queue.Task, len(tasks))
+	for i, t := range tasks {
+		taskInterfaces[i] = t
+	}
+	worker.SetTasks(taskInterfaces)
+
+	go func() {
+		time.Sleep(100 * time.Millisecond) // Wait for additional tasks to start
+		for i := 0; i < 3; i++ {
+			newTask := &MockAppendTask{waitTime: 50}
+			worker.AddTask(newTask) // Add a new task while worker is running
+		}
+	}()
+
+	err := worker.Start()
+
+	assert.Equal(t, err, nil, "Worker should not return an error on successful execution")
+}
+
 type MockTask struct {
 	waitTime int
 }
@@ -156,5 +180,25 @@ func (m *MockFailingTask) Execute(ctx context.Context) error {
 	case <-time.After(time.Duration(m.waitTime) * time.Millisecond):
 		log.Printf("Task %s failed after %d ms \n", m.ID(), m.waitTime)
 		return errors.New(`failed while execute task ` + m.ID()) // Simulate a failure
+	}
+}
+
+type MockAppendTask struct {
+	waitTime int
+}
+
+func (m *MockAppendTask) ID() string {
+	v := atomicCounter.Add(1) //rand.Int()
+	return strconv.Itoa(int(v)) + `appended`
+}
+
+func (m *MockAppendTask) Execute(ctx context.Context) error {
+	// Simulate some work
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(time.Duration(m.waitTime) * time.Millisecond):
+		log.Printf("Task %s completed after %d ms \n", m.ID(), m.waitTime)
+		return nil
 	}
 }
