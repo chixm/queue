@@ -140,6 +140,36 @@ func TestAppendTaskWhileWorkerIsRunning(t *testing.T) {
 	assert.Equal(t, err, nil, "Worker should not return an error on successful execution")
 }
 
+func TestWorkerWithAppendTask(t *testing.T) {
+	ctx := context.Background()
+	maxWorkers := 5
+	worker := queue.NewWorker(ctx, maxWorkers)
+	tasksWithAppend := make([]queue.Task, len(tasks))
+	for i, t := range tasks {
+		tasksWithAppend[i] = t
+	}
+	worker.SetTasks(tasksWithAppend)
+
+	err := worker.Start()
+
+	if err != nil {
+		t.Error("Worker finished with error:", err)
+		return
+	}
+
+	// append a new task after the worker has done should be error
+
+	newTask := &MockAppendTask{waitTime: 50}
+
+	err = worker.AddTask(newTask)
+
+	if err != nil {
+		log.Printf("error: %v\n", err)
+	}
+
+	assert.NotNil(t, err, "Adding a new task after worker has finished should return an error")
+}
+
 type MockTask struct {
 	waitTime int
 }

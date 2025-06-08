@@ -5,6 +5,7 @@ import (
 	"log"
 	"sync/atomic"
 
+	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -56,8 +57,12 @@ func (w *taskWorker) SetTasks(task []Task) {
 	}
 }
 
-func (w *taskWorker) AddTask(task Task) {
+func (w *taskWorker) AddTask(task Task) error {
+	if w.ctx.Err() != nil {
+		return errors.Wrap(w.ctx.Err(), "worker has alredy finished or canceled") // Do not add tasks if the context is already canceled
+	}
 	w.queue.Enqueue(task)
+	return nil
 }
 
 func (w *taskWorker) Start() error {
