@@ -3,8 +3,8 @@ package queue_test
 import (
 	"context"
 	"log"
-	"math/rand"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,22 +12,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var tasks = []*MockTask{
+	{waitTime: 300},
+	{waitTime: 100},
+	{waitTime: 100},
+	{waitTime: 100},
+	{waitTime: 200},
+	{waitTime: 300},
+	{waitTime: 200},
+	{waitTime: 100},
+	{waitTime: 100},
+}
+
 func TestWorker(t *testing.T) {
 	ctx := context.Background()
 	maxWorkers := 5
 	worker := queue.NewWorker(ctx, maxWorkers)
 
-	tasks := []*MockTask{
-		{waitTime: 300},
-		{waitTime: 100},
-		{waitTime: 100},
-		{waitTime: 100},
-		{waitTime: 200},
-		{waitTime: 300},
-		{waitTime: 200},
-		{waitTime: 100},
-		{waitTime: 100},
-	}
 	taskInterfaces := make([]queue.Task, len(tasks))
 	for i, t := range tasks {
 		taskInterfaces[i] = t
@@ -39,13 +40,64 @@ func TestWorker(t *testing.T) {
 	assert.Equal(t, err, nil, "Worker should not return an error on successful execution")
 }
 
+func TestCancelTaskFromOutsideContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	maxWorkers := 5
+	worker := queue.NewWorker(ctx, maxWorkers)
+
+	taskInterfaces := make([]queue.Task, len(tasks))
+	for i, t := range tasks {
+		taskInterfaces[i] = t
+	}
+	worker.SetTasks(taskInterfaces)
+
+	go func() {
+		time.Sleep(200 * time.Millisecond) // Cancel after some tasks have started
+		cancel()
+	}()
+
+	err := worker.Start()
+
+	if err != nil {
+		log.Printf("Worker finished with error: %v\n", err)
+	}
+	assert.Equal(t, err, context.Canceled, "Worker should return context.Canceled when tasks are canceled")
+}
+
+func TestCancelTaskFromWokder(t *testing.T) {
+	ctx := context.Background()
+	maxWorkers := 5
+	worker := queue.NewWorker(ctx, maxWorkers)
+
+	taskInterfaces := make([]queue.Task, len(tasks))
+	for i, t := range tasks {
+		taskInterfaces[i] = t
+	}
+	worker.SetTasks(taskInterfaces)
+
+	go func() {
+		time.Sleep(200 * time.Millisecond) // Cancel after some tasks have started
+		worker.CancelAllFunc()             // Cancel all tasks
+	}()
+
+	err := worker.Start()
+
+	if err != nil {
+		log.Printf("Worker finished with error: %v\n", err)
+	}
+	assert.Equal(t, err, context.Canceled, "Worker should return context.Canceled when tasks are canceled")
+
+}
+
 type MockTask struct {
 	waitTime int
 }
 
+var atomicCounter atomic.Int32
+
 func (m *MockTask) ID() string {
-	v := rand.Int()
-	return strconv.Itoa(v)
+	v := atomicCounter.Add(1) //rand.Int()
+	return strconv.Itoa(int(v))
 }
 
 func (m *MockTask) Execute(ctx context.Context) error {

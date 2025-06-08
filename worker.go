@@ -16,7 +16,7 @@ type taskWorker struct {
 	errGroup      *errgroup.Group
 	maxWorkers    int
 	queue         *queue[Task]
-	active        atomic.Int32           // Number of active workers
+	activeTaskCnt atomic.Int32           // Number of active workers
 	failedTasks   atomic.Pointer[[]Task] // Pointer to a slice of failed tasks
 	logger        Logger
 }
@@ -38,7 +38,7 @@ func NewWorker(ctx context.Context, maxWorkers int) *taskWorker {
 		queue:         NewQueue[Task](),
 		CancelAllFunc: cancel,
 		errGroup:      eg,
-		active:        atomic.Int32{},
+		activeTaskCnt: atomic.Int32{},
 		failedTasks:   atomic.Pointer[[]Task]{},
 	}
 }
@@ -69,10 +69,10 @@ func (w *taskWorker) Start() error {
 				return w.errGroup.Wait() // No more tasks to process
 			}
 
-			log.Println(`current active workers:`, w.active.Load())
+			log.Println(`current active workers:`, w.activeTaskCnt.Load())
 			w.errGroup.Go(func() error {
-				w.active.Add(1)
-				defer w.active.Add(-1) // Decrement the active worker count when done
+				w.activeTaskCnt.Add(1)
+				defer w.activeTaskCnt.Add(-1) // Decrement the active worker count when done
 				// Execute the task
 				if err := task.Execute(w.ctx); err != nil {
 					// if task cancelled it's not a failure
@@ -102,7 +102,7 @@ func (w *taskWorker) Stop() {
 
 func (w *taskWorker) CurrentActiveWorkers() int32 {
 	// Return the number of currently active workers
-	return w.active.Load()
+	return w.activeTaskCnt.Load()
 }
 
 func (w *taskWorker) FailedTasks() []Task {
