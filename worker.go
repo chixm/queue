@@ -2,11 +2,11 @@ package queue
 
 import (
 	"context"
-	"log"
 	"sync/atomic"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 // taskWorker is goroutine that processes tasks from the queue.
@@ -17,7 +17,7 @@ type taskWorker struct {
 	errGroup      *errgroup.Group
 	maxWorkers    int
 	queue         *queue[Task]
-	activeTaskCnt atomic.Int32           // Number of active workers
+	activeTaskCnt *semaphore.Weighted    // Number of active workers
 	failedTasks   atomic.Pointer[[]Task] // Pointer to a slice of failed tasks
 	logger        Logger
 }
@@ -42,7 +42,7 @@ func NewWorker(ctx context.Context, maxWorkers int) *taskWorker {
 		queue:         newQueue[Task](),
 		CancelAllFunc: cancel,
 		errGroup:      eg,
-		activeTaskCnt: atomic.Int32{},
+		activeTaskCnt: semaphore.NewWeighted(int64(maxWorkers)),
 		failedTasks:   *atomicPointer,
 	}
 }
@@ -77,10 +77,9 @@ func (w *taskWorker) Start() error {
 				return w.errGroup.Wait() // No more tasks to process
 			}
 
-			log.Println(`current active workers:`, w.activeTaskCnt.Load())
 			w.errGroup.Go(func() error {
-				w.activeTaskCnt.Add(1)
-				defer w.activeTaskCnt.Add(-1) // Decrement the active worker count when done
+				w.activeTaskCnt.Acquire(w.ctx, 1)
+				defer w.activeTaskCnt.Release(1) // Decrement the active worker count when done
 				// Execute the task
 				if err := task.Execute(w.ctx); err != nil {
 					// if task cancelled it's not a failure
@@ -106,11 +105,6 @@ func (w *taskWorker) Stop() {
 	w.CancelAllFunc()
 	// Wait for all tasks to complete
 	w.errGroup.Wait()
-}
-
-func (w *taskWorker) CurrentActiveWorkers() int32 {
-	// Return the number of currently active workers
-	return w.activeTaskCnt.Load()
 }
 
 func (w *taskWorker) FailedTasks() []Task {
